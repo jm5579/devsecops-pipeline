@@ -9,18 +9,18 @@
 module "vpc" {
   source = "./modules/vpc"
 
-  name_prefix           = "secure-python-app"
-  vpc_cidr              = var.vpc_cidr
-  public_subnet_cidrs   = var.public_subnet_cidrs
-  private_subnet_cidrs  = var.private_subnet_cidrs
-  availability_zones    = var.availability_zones
+  name_prefix          = "secure-python-app"
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  availability_zones   = var.availability_zones
 }
 
 module "artifact_bucket" {
   source = "./modules/s3"
 
-  bucket_name           = var.artifact_bucket_name
-  access_log_bucket_id  = module.cloudtrail_bucket.bucket_id
+  bucket_name          = var.artifact_bucket_name
+  access_log_bucket_id = module.cloudtrail_bucket.bucket_id
 }
 
 module "cloudtrail_bucket" {
@@ -68,13 +68,13 @@ resource "aws_s3_bucket_policy" "cloudtrail_delivery" {
 module "iam" {
   source = "./modules/iam"
 
-  name_prefix           = "secure-python-app"
-  aws_region             = var.aws_region
-  vpc_id                 = module.vpc.vpc_id
-  artifact_bucket_name   = module.artifact_bucket.bucket_id
-  ecr_repository_name    = "secure-python-app"
-  github_org              = var.github_org
-  github_repo             = var.github_repo
+  name_prefix          = "secure-python-app"
+  aws_region           = var.aws_region
+  vpc_id               = module.vpc.vpc_id
+  artifact_bucket_name = module.artifact_bucket.bucket_id
+  ecr_repository_name  = "secure-python-app"
+  github_org           = var.github_org
+  github_repo          = var.github_repo
 }
 
 # SECURITY DECISION: a dedicated security group represents the only
@@ -112,15 +112,15 @@ resource "aws_security_group" "ingress" {
 module "ec2" {
   source = "./modules/ec2"
 
-  name_prefix                = "secure-python-app"
-  aws_region                  = var.aws_region
-  vpc_id                       = module.vpc.vpc_id
-  private_subnet_id           = module.vpc.private_subnet_ids[0]
-  ingress_security_group_id   = aws_security_group.ingress.id
-  iam_instance_profile_name   = module.iam.ec2_instance_profile_name
-  instance_type                = var.instance_type
-  app_port                      = var.app_port
-  cloudtrail_bucket_id        = module.cloudtrail_bucket.bucket_id
+  name_prefix               = "secure-python-app"
+  aws_region                = var.aws_region
+  vpc_id                    = module.vpc.vpc_id
+  private_subnet_id         = module.vpc.private_subnet_ids[0]
+  ingress_security_group_id = aws_security_group.ingress.id
+  iam_instance_profile_name = module.iam.ec2_instance_profile_name
+  instance_type             = var.instance_type
+  app_port                  = var.app_port
+  cloudtrail_bucket_id      = module.cloudtrail_bucket.bucket_id
 }
 
 # SECURITY DECISION: the Flask secret key lives only in SSM Parameter

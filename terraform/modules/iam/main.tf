@@ -92,9 +92,9 @@ resource "aws_iam_role_policy" "s3_artifact_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ListOwnPrefix"
-        Effect = "Allow"
-        Action = ["s3:ListBucket"]
+        Sid      = "ListOwnPrefix"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
         Resource = "arn:aws:s3:::${var.artifact_bucket_name}"
         Condition = {
           StringLike = {
@@ -103,9 +103,9 @@ resource "aws_iam_role_policy" "s3_artifact_access" {
         }
       },
       {
-        Sid    = "ReadWriteOwnPrefix"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
+        Sid      = "ReadWriteOwnPrefix"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "arn:aws:s3:::${var.artifact_bucket_name}/app-logs/*"
         Condition = {
           StringEquals = {
@@ -213,9 +213,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Resource = "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.ecr_repository_name}"
       },
       {
-        Sid      = "SSMDeployCommand"
-        Effect   = "Allow"
-        Action   = ["ssm:SendCommand"]
+        Sid    = "SSMDeployCommand"
+        Effect = "Allow"
+        Action = ["ssm:SendCommand"]
         Resource = [
           "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
           "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*",

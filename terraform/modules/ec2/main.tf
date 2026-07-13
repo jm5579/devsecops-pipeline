@@ -46,7 +46,7 @@ resource "aws_security_group_rule" "app_ingress" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.app.id
   source_security_group_id = var.ingress_security_group_id
-  description               = "Application traffic from the load balancer/ingress security group only"
+  description              = "Application traffic from the load balancer/ingress security group only"
 }
 
 # SECURITY DECISION: egress is scoped to HTTPS only (443) - sufficient
@@ -78,7 +78,7 @@ resource "aws_instance" "app" {
   # Manager / Run Command is the only administrative path.
 
   metadata_options {
-    http_tokens                = "required" # SECURITY DECISION: enforce IMDSv2, closing the classic SSRF-to-credential-theft path (IMDSv1)
+    http_tokens                 = "required" # SECURITY DECISION: enforce IMDSv2, closing the classic SSRF-to-credential-theft path (IMDSv1)
     http_put_response_hop_limit = 1
     http_endpoint               = "enabled"
   }
