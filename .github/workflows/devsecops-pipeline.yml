@@ -376,9 +376,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
           docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest"
           docker push "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker push "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest"
 
       - name: Deploy to EC2 via SSM (no SSH keys required)
         env:
