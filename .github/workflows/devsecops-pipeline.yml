@@ -162,21 +162,24 @@ jobs:
       - name: Load image
         run: docker load -i image.tar
 
-      - name: Run Trivy vulnerability scanner
+      - name: Generate Trivy SARIF report
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
-          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          ignore-unfixed: true
+
+      - name: Enforce Trivy HIGH and CRITICAL gate
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: table
+          severity: "HIGH,CRITICAL"
           exit-code: "1"
-          # SECURITY DECISION: exit-code 1 on CRITICAL or HIGH means the
-          # job - and therefore the whole pipeline via `needs` - fails
-          # here if the base image or any OS package has an unpatched
-          # critical/high CVE. This is deliberately stricter than the
-          # Snyk gate above (critical-only) because a container image
-          # ships the entire OS surface, not just app dependencies.
-          ignore-unfixed: true # don't block on CVEs with no available patch yet
+          ignore-unfixed: true
+          scanners: vuln
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
