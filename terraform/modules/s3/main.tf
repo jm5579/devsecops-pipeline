@@ -64,6 +64,7 @@ resource "aws_s3_bucket_public_access_block" "this" {
 }
 
 resource "aws_s3_bucket_policy" "enforce_tls" {
+  count  = var.manage_bucket_policy ? 1 : 0
   bucket = aws_s3_bucket.this.id
 
   # SECURITY DECISION: explicit deny on any request made without TLS,
@@ -110,7 +111,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
 }
 
 resource "aws_s3_bucket_logging" "this" {
-  count  = var.access_log_bucket_id != null ? 1 : 0
+  count  = var.enable_access_logging ? 1 : 0
   bucket = aws_s3_bucket.this.id
 
   target_bucket = var.access_log_bucket_id

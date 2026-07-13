@@ -6,6 +6,8 @@
 # for application artifacts, a separate S3 bucket for CloudTrail logs,
 # and IAM roles scoped with least-privilege condition keys throughout.
 
+data "aws_caller_identity" "current" {}
+
 module "vpc" {
   source = "./modules/vpc"
 
@@ -19,19 +21,23 @@ module "vpc" {
 module "artifact_bucket" {
   source = "./modules/s3"
 
-  bucket_name          = var.artifact_bucket_name
-  access_log_bucket_id = module.cloudtrail_bucket.bucket_id
+  bucket_name           = var.artifact_bucket_name
+  access_log_bucket_id  = module.cloudtrail_bucket.bucket_id
+  enable_access_logging = true
 }
 
 module "cloudtrail_bucket" {
   source = "./modules/s3"
 
-  bucket_name = "${var.artifact_bucket_name}-cloudtrail"
+  bucket_name          = "${var.artifact_bucket_name}-cloudtrail"
+  manage_bucket_policy = false
+
   # SECURITY DECISION: no access_log_bucket_id is passed here - a bucket
   # cannot log to itself, and this bucket exists specifically to receive
   # CloudTrail's own audit trail, so a secondary access log would be
   # circular. It still inherits every other control from the s3 module
-  # (encryption, versioning, public access block, TLS-only policy).
+  # except the default bucket policy, because the root module supplies a
+  # combined TLS + CloudTrail delivery policy.
 }
 
 # SECURITY DECISION: CloudTrail requires a bucket policy granting the
@@ -43,24 +49,61 @@ resource "aws_s3_bucket_policy" "cloudtrail_delivery" {
 
   policy = jsonencode({
     Version = "2012-10-17"
+
     Statement = [
       {
-        Sid       = "AWSCloudTrailAclCheck"
-        Effect    = "Allow"
-        Principal = { Service = "cloudtrail.amazonaws.com" }
-        Action    = "s3:GetBucketAcl"
-        Resource  = module.cloudtrail_bucket.bucket_arn
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+
+        Resource = [
+          module.cloudtrail_bucket.bucket_arn,
+          "${module.cloudtrail_bucket.bucket_arn}/*",
+        ]
+
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
       },
       {
-        Sid       = "AWSCloudTrailWrite"
-        Effect    = "Allow"
-        Principal = { Service = "cloudtrail.amazonaws.com" }
-        Action    = "s3:PutObject"
-        Resource  = "${module.cloudtrail_bucket.bucket_arn}/AWSLogs/*"
-        Condition = {
-          StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
+        Sid    = "AWSCloudTrailAclCheck"
+        Effect = "Allow"
+
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
         }
-      }
+
+        Action   = "s3:GetBucketAcl"
+        Resource = module.cloudtrail_bucket.bucket_arn
+
+        Condition = {
+          StringEquals = {
+            "aws:SourceArn" = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/secure-python-app-trail"
+          }
+        }
+      },
+      {
+        Sid    = "AWSCloudTrailWrite"
+        Effect = "Allow"
+
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+
+        Action = "s3:PutObject"
+
+        Resource = "${module.cloudtrail_bucket.bucket_arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl"  = "bucket-owner-full-control"
+            "aws:SourceArn" = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/secure-python-app-trail"
+          }
+        }
+      },
     ]
   })
 }

@@ -85,7 +85,7 @@ resource "aws_instance" "app" {
 
   root_block_device {
     encrypted   = true # SECURITY DECISION: EBS root volume encrypted at rest
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
   }
 
