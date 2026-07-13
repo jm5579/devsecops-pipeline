@@ -1,0 +1,428 @@
+# .github/workflows/devsecops-pipeline.yml
+#
+# SECURITY DECISION: this pipeline is built as a series of independent
+# jobs with explicit `needs:` dependencies rather than one long job. That
+# means: (a) each security tool's findings are isolated in their own logs
+# and job summary, (b) a failure in one gate doesn't hide the results of
+# gates that already ran, and (c) the final `deploy` job can only run if
+# every single security job before it succeeded - GitHub Actions treats
+# `needs` as an implicit AND, so there is no code path that reaches AWS
+# without passing every gate.
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# SECURITY DECISION: the default GITHUB_TOKEN permission is read-only at
+# the workflow level. Individual jobs that need to write (e.g. to upload
+# a CodeQL SARIF file or comment on a PR) elevate only the specific
+# permission they need, following least privilege.
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ca-central-1 # SECURITY DECISION: Canadian region for data residency
+  PYTHON_VERSION: "3.12"
+  IMAGE_NAME: secure-python-app
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Stage 1: Checkout and environment setup
+  # ---------------------------------------------------------------------
+  setup:
+    name: Checkout & Setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false # SECURITY DECISION: don't leave a token on disk for later steps
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+  # ---------------------------------------------------------------------
+  # Stage 2: CodeQL SAST scan
+  # ---------------------------------------------------------------------
+  codeql-sast:
+    name: CodeQL SAST Scan
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # required to upload SARIF results
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended # SECURITY DECISION: broader query pack than the default, catches more CWE classes
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+          # SECURITY DECISION: CodeQL results surface as GitHub code
+          # scanning alerts automatically; we don't need a manual
+          # pass/fail parse here because a `security-extended` finding at
+          # error severity fails this job by default, which blocks the
+          # downstream `security-report` and `deploy` jobs via `needs`.
+
+  # ---------------------------------------------------------------------
+  # Stage 3: Snyk dependency vulnerability scan (blocks on critical)
+  # ---------------------------------------------------------------------
+  snyk-dependency-scan:
+    name: Snyk Dependency Scan
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/python-3.10@master
+        continue-on-error: false
+        env:
+          # SECURITY DECISION: the Snyk API token is read from a GitHub
+          # Actions encrypted secret, never committed to source. See
+          # README.md > "GitHub Actions Secrets Configuration".
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: >
+            --file=requirements.txt
+            --severity-threshold=critical
+            --sarif-file-output=snyk-results.sarif
+          # SECURITY DECISION: --severity-threshold=critical means Snyk
+          # exits non-zero - failing this job - only on critical findings.
+          # High/medium/low findings are still recorded in the SARIF
+          # output and surfaced in the aggregated report, but don't block
+          # deployment on their own; this mirrors how most regulated
+          # orgs triage (critical = stop the line, everything else =
+          # tracked and remediated on an SLA).
+
+      - name: Upload Snyk SARIF results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snyk-results
+          path: snyk-results.sarif
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # Stage 4: Docker image build
+  # ---------------------------------------------------------------------
+  docker-build:
+    name: Build Docker Image
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (not pushed yet - scan gate comes first)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # SECURITY DECISION: the image is built and loaded into the
+          # local Docker daemon only. It is intentionally NOT pushed to
+          # any registry at this stage - it only gets pushed after Trivy
+          # and ZAP have both passed, in the `deploy` job below.
+
+      - name: Save image as artifact for downstream jobs
+        run: docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} -o image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar
+          retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # Stage 5: Trivy container image scan (blocks on critical + high)
+  # ---------------------------------------------------------------------
+  trivy-container-scan:
+    name: Trivy Container Scan
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          # SECURITY DECISION: exit-code 1 on CRITICAL or HIGH means the
+          # job - and therefore the whole pipeline via `needs` - fails
+          # here if the base image or any OS package has an unpatched
+          # critical/high CVE. This is deliberately stricter than the
+          # Snyk gate above (critical-only) because a container image
+          # ships the entire OS surface, not just app dependencies.
+          ignore-unfixed: true # don't block on CVEs with no available patch yet
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload Trivy results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # Stage 6: OWASP ZAP DAST scan against a running container instance
+  # ---------------------------------------------------------------------
+  zap-dast-scan:
+    name: OWASP ZAP DAST Scan
+    needs: trivy-container-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Run target container for DAST scanning
+        run: |
+          docker run -d --name target-app \
+            -p 8080:8080 \
+            -e FLASK_SECRET_KEY="${{ secrets.CI_TEST_FLASK_SECRET_KEY }}" \
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # SECURITY DECISION: even the ephemeral CI test instance reads
+          # its secret key from a GitHub Actions secret rather than a
+          # hardcoded value, so the workflow never contains a plaintext
+          # credential, matching the "zero hardcoded secrets" requirement
+          # even in test/demo scenarios.
+
+          echo "Waiting for container health check..."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8080/healthz > /dev/null; then
+              echo "Container is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container failed health check within timeout." >&2
+          docker logs target-app
+          exit 1
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: "http://localhost:8080"
+          # SECURITY DECISION: the baseline scan is passive-only by
+          # default (no active attack payloads), which is appropriate
+          # for a scheduled CI job against an ephemeral, isolated
+          # container with no real user data. `rules_file_name` lets us
+          # tune false positives without disabling entire rule classes.
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a"
+          fail_action: true
+          # SECURITY DECISION: fail_action=true means any ZAP alert at or
+          # above the configured threshold fails this job - and blocks
+          # deployment - the same way the SAST/dependency/container gates
+          # do above.
+
+      - name: Stop and remove target container
+        if: always()
+        run: docker rm -f target-app || true
+
+      - name: Upload ZAP report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-results
+          path: report_html.html
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # Stage 7: Security findings aggregation and report generation
+  # ---------------------------------------------------------------------
+  security-report:
+    name: Aggregate Security Findings
+    needs: [codeql-sast, snyk-dependency-scan, trivy-container-scan, zap-dast-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
+          pattern: "*-results"
+          merge-multiple: false
+
+      - name: Generate combined findings summary
+        run: |
+          mkdir -p security-reports
+          {
+            echo "# Security Findings Summary"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo "Run: ${{ github.run_id }}"
+            echo "Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo ""
+            echo "| Gate | Job Result |"
+            echo "|------|------------|"
+            echo "| CodeQL SAST | ${{ needs.codeql-sast.result }} |"
+            echo "| Snyk Dependency Scan | ${{ needs.snyk-dependency-scan.result }} |"
+            echo "| Trivy Container Scan | ${{ needs.trivy-container-scan.result }} |"
+            echo "| OWASP ZAP DAST Scan | ${{ needs.zap-dast-scan.result }} |"
+            echo ""
+            echo "Detailed SARIF/HTML output for each tool is attached as"
+            echo "individual workflow artifacts on this run, and CodeQL /"
+            echo "Trivy findings are also visible under the repository's"
+            echo "Security > Code scanning alerts tab."
+          } > security-reports/SUMMARY.md
+          cat security-reports/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload aggregated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-findings-report
+          path: security-reports/
+          retention-days: 90
+          # SECURITY DECISION: the aggregated report is retained for 90
+          # days (longer than individual tool artifacts) to support audit
+          # and change-management evidence requests, common in federally
+          # regulated environments (see README > Supply Chain Security).
+
+  # ---------------------------------------------------------------------
+  # Stage 8: Conditional deployment to AWS EC2 - only when every gate passed
+  # ---------------------------------------------------------------------
+  deploy:
+    name: Deploy to AWS EC2
+    needs: [codeql-sast, snyk-dependency-scan, trivy-container-scan, zap-dast-scan, security-report]
+    # SECURITY DECISION: this `needs` list is the actual enforcement
+    # mechanism for "deploy only if all security gates pass." GitHub
+    # Actions will not start this job unless every job listed here
+    # completed with `result == success` (the default behaviour without
+    # an `if:` override), and it also restricts deploys to the main
+    # branch so PR/feature-branch runs never touch production.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production # SECURITY DECISION: enables required manual reviewers / branch protection in repo settings
+    permissions:
+      contents: read
+      id-token: write # required for OIDC federation to AWS (no long-lived AWS keys)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # SECURITY DECISION: we use OpenID Connect federation to assume
+          # an IAM role rather than storing static AWS access keys as a
+          # GitHub secret. This means there is no long-lived AWS
+          # credential to leak, rotate, or accidentally commit - GitHub
+          # issues a short-lived token per run, scoped to this repo/branch
+          # via the IAM role's trust policy. See terraform/modules/iam
+          # and README.md > "GitHub Actions Secrets Configuration".
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-devsecops-pipeline-deploy
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest"
+          docker push "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker push "$ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest"
+
+      - name: Deploy to EC2 via SSM (no SSH keys required)
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          # SECURITY DECISION: deployment uses AWS Systems Manager
+          # Run Command over the private, IAM-authenticated SSM channel
+          # instead of SSH. The EC2 instance in terraform/modules/ec2 has
+          # no open inbound SSH port and no key pair - SSM is the only
+          # administrative access path, which removes an entire class of
+          # exposed-port / leaked-key risk.
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=secure-python-app" \
+            --parameters commands="[\"docker pull $ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ github.sha }}\",\"systemctl restart secure-python-app.service\"]" \
+            --comment "Automated deploy from GitHub Actions run ${{ github.run_id }}" \
+            --region ${{ env.AWS_REGION }}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!--
+  index.html
+  Static landing page. No user-supplied data is ever passed into this
+  template, so Jinja2's default autoescaping (left enabled - we never set
+  autoescape=False anywhere in app.py) is sufficient to prevent XSS here.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Python Application Pipeline - Demo App</title>
+</head>
+<body>
+    <main>
+        <h1>Secure Python Application Pipeline</h1>
+        <p>
+            This Flask application is the deployment target for a DevSecOps
+            CI/CD pipeline built with GitHub Actions, Terraform, and AWS.
+        </p>
+        <ul>
+            <li><a href="/healthz">/healthz</a> - liveness/readiness probe</li>
+            <li><a href="/lookup?host=example.com">/lookup?host=example.com</a> - safe DNS lookup</li>
+        </ul>
+    </main>
+</body>
+</html>

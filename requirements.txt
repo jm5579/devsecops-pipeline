@@ -1,0 +1,23 @@
+# requirements.txt
+#
+# SECURITY DECISION: Every dependency is pinned to an exact version
+# (== not >=) rather than a floating range. This is a core supply-chain
+# security control: it makes builds reproducible, means a compromised or
+# buggy upstream release can't be pulled in automatically on your next
+# `pip install`, and gives Snyk/pip-audit a stable, known artifact to
+# scan on every run. See README.md > "Supply Chain Security" for more on
+# why pinning + scanning + SBOMs matter together.
+#
+# NOTE: Flask is intentionally pinned to an older release with a known,
+# published CVE so that the "Snyk dependency vulnerability scan" pipeline
+# stage has a real finding to block on and report, demonstrating the gate
+# actually works end-to-end. See README.md > "Security Findings Examples"
+# for the exact Snyk output this produces and the one-line remediation
+# (bump the pin to the patched version).
+Flask==2.2.2
+Werkzeug==2.2.2
+Jinja2==3.1.2
+MarkupSafe==2.1.3
+itsdangerous==2.1.2
+click==8.1.7
+gunicorn==21.2.0

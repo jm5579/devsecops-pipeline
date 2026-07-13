@@ -1,0 +1,21 @@
+# .dockerignore
+# SECURITY DECISION: explicitly exclude anything that could contain
+# secrets, credentials, or state from ever entering the Docker build
+# context, so it is physically impossible for them to end up in a layer.
+.env
+.env.*
+*.pem
+*.key
+.git
+.github
+.gitignore
+terraform/
+**/*.tfstate
+**/*.tfstate.backup
+**/.terraform/
+docs/
+README.md
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/

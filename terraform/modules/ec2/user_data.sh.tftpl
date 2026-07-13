@@ -1,0 +1,45 @@
+#!/bin/bash
+# user_data.sh.tftpl
+#
+# SECURITY DECISION: this script contains no secrets of any kind. It
+# installs the container runtime and a systemd unit that, at service
+# start time, reads FLASK_SECRET_KEY from AWS Systems Manager Parameter
+# Store (a SecureString, decrypted via the instance's IAM role - see
+# terraform/modules/iam) rather than from anything baked in here. The
+# deployed container image itself is pulled fresh by the GitHub Actions
+# `deploy` job via SSM Run Command, not by this bootstrap script.
+set -euo pipefail
+
+dnf install -y docker
+systemctl enable --now docker
+
+cat <<'UNIT' > /etc/systemd/system/secure-python-app.service
+[Unit]
+Description=Secure Python App container
+After=docker.service
+Requires=docker.service
+
+[Service]
+# SECURITY DECISION: the secret is fetched at start time into an
+# environment file with 0600 permissions, readable only by root, and is
+# never written into this unit file or any world-readable location.
+ExecStartPre=/bin/bash -c '/usr/bin/aws ssm get-parameter --name "/secure-python-app/flask-secret-key" --with-decryption --query "Parameter.Value" --output text --region ${aws_region} > /etc/secure-python-app.env.tmp && echo "FLASK_SECRET_KEY=$(cat /etc/secure-python-app.env.tmp)" > /etc/secure-python-app.env && rm -f /etc/secure-python-app.env.tmp && chmod 600 /etc/secure-python-app.env'
+EnvironmentFile=/etc/secure-python-app.env
+ExecStartPre=-/usr/bin/docker rm -f secure-python-app
+ExecStart=/usr/bin/docker run --rm --name secure-python-app \
+  --env-file /etc/secure-python-app.env \
+  -p ${app_port}:${app_port} \
+  secure-python-app:latest
+ExecStop=/usr/bin/docker stop secure-python-app
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+# SECURITY DECISION: the service is enabled but not started here - the
+# GitHub Actions `deploy` job starts/restarts it only after the image
+# has been pulled from ECR, so a freshly-launched instance never runs a
+# stale or nonexistent image.
+systemctl enable secure-python-app.service

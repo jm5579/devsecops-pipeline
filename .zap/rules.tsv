@@ -1,0 +1,14 @@
+# .zap/rules.tsv
+# OWASP ZAP baseline scan rule tuning.
+# Format: <rule id>	<action: IGNORE|WARN|FAIL>	<url regex (optional)>
+#
+# SECURITY DECISION: nothing is IGNOREd by default - every rule ZAP ships
+# with runs at its default action. This file exists as the documented,
+# version-controlled place to add exceptions (e.g. a rule that only ever
+# fires on a third-party asset you don't control), so any future
+# suppression is visible in code review rather than silently disabling
+# a check in the pipeline itself.
+#
+# Example of how a tuned exception would be added (left commented out
+# intentionally - nothing is suppressed in this project):
+# 10021	WARN	.*/static/.*   # X-Content-Type-Options missing on static assets only

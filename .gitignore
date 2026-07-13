@@ -1,0 +1,59 @@
+# .gitignore
+# Combined Python + Terraform ignore rules.
+# SECURITY DECISION: .env, *.tfvars, and *.tfstate* are excluded because
+# they routinely contain secrets or sensitive infrastructure details
+# (IP ranges, resource IDs, sometimes plaintext credentials in older
+# Terraform state). None of these should ever be committed - secrets
+# belong in GitHub Actions secrets, and state belongs in the encrypted
+# S3 backend defined in terraform/backend.tf.
+
+# ---- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# ---- Secrets / local env -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+
+# ---- Terraform ------------------------------------------------------------
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+!backend.hcl.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+
+# ---- Editor / OS ------------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+
+# ---- Pipeline artifacts (generated, not source) ----------------------------
+security-reports/
+*.sarif

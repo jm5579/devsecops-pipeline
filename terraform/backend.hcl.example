@@ -1,0 +1,13 @@
+# terraform/backend.hcl.example
+#
+# Copy this file to backend.hcl (which is gitignored) and fill in the
+# values output by `terraform/bootstrap`. Then run:
+#   terraform init -backend-config=backend.hcl
+#
+# This file contains no secrets - only resource names/region - but is
+# still kept out of version control by convention since backend details
+# are environment-specific (dev/staging/prod would each have their own).
+
+bucket         = "your-org-secure-python-app-tfstate"
+dynamodb_table = "your-org-secure-python-app-tfstate-locks"
+region         = "ca-central-1"
