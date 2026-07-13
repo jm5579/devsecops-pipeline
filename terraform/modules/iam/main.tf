@@ -178,7 +178,7 @@ resource "aws_iam_role" "github_actions_deploy" {
         StringLike = {
           # SECURITY DECISION: only workflow runs triggered by a push to
           # main on this exact repository can assume this role.
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:environment:production"
         }
       }
     }]
