@@ -147,6 +147,8 @@ Open the **Actions** tab - you should see all eight stages run in order, with th
 | Aggregate Security Findings | Collects every tool's output into one artifact/summary | Rarely fails itself; reflects the state of jobs above | Check `security-findings-report` artifact for the full picture |
 | Deploy to AWS EC2 | Pushes to ECR, restarts the service via SSM | `needs:` unmet (never starts) or SSM command fails | If it never starts, check which upstream job failed; if SSM fails, check the target instance is running and tagged `Name=secure-python-app` |
 
+**A note on image tagging:** deployments use the immutable git commit SHA as the image tag (e.g. `secure-python-app:a1b2c3d`), never `:latest`. A mutable tag like `:latest` can be silently repointed to a different image after a scan has already passed it, which would let an unscanned image reach production without any pipeline stage re-running. Tagging by SHA means the exact image that passed CodeQL, Trivy, and ZAP is the only image that can ever be deployed under that tag.
+
 ## Supply chain security
 
 **Dependency pinning.** `requirements.txt` pins every package to an exact version (`==`), not a floating range. A floating range means the *next* `pip install` can silently pull in a different, potentially compromised or broken release without any code change or review - a real attack vector seen in incidents like the `event-stream` and `ua-parser-js` npm compromises. Exact pins mean nothing changes without a deliberate commit that a reviewer and Snyk both see.
