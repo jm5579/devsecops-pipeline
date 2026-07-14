@@ -2,11 +2,11 @@
 
 A production-style DevSecOps CI/CD pipeline that gates every deployment of a Python Flask application behind SAST, dependency, container, and DAST security scans before provisioning AWS infrastructure with Terraform.
 
-![Pipeline Status](https://img.shields.io/github/actions/workflow/status/jm5579/secure-python-app-pipeline/devsecops-pipeline.yml?branch=main&label=pipeline)
+![Pipeline Status](https://img.shields.io/github/actions/workflow/status/jm5579/devsecops-pipeline/devsecops-pipeline.yml?branch=main&label=pipeline)
 ![Security Scans](https://img.shields.io/badge/security%20scans-CodeQL%20%7C%20Snyk%20%7C%20Trivy%20%7C%20ZAP-blue)
-![License](https://img.shields.io/github/license/jm5579/secure-python-app-pipeline)
+![License](https://img.shields.io/github/license/jm5579/devsecops-pipeline)
 
-> Replace `jm5579/secure-python-app-pipeline` in the badge URLs above with your actual GitHub path once this repository is pushed - badges render live from the repo they live in.
+> Replace `jm5579/devsecops-pipeline` in the badge URLs above with your actual GitHub path once this repository is pushed - badges render live from the repo they live in.
 
 ---
 
