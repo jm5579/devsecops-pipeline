@@ -86,7 +86,7 @@ A junior engineer following these steps should have the pipeline green end-to-en
 
 **1. Fork/clone the repository (2 min)**
 ```bash
-git clone https://github.com/jm5579/secure-python-app-pipeline.git
+git clone https://github.com/jm5579/devsecops-pipeline.git
 cd secure-python-app-pipeline
 ```
 
