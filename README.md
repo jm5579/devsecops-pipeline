@@ -2,11 +2,11 @@
 
 A production-style DevSecOps CI/CD pipeline that gates every deployment of a Python Flask application behind SAST, dependency, container, and DAST security scans before provisioning AWS infrastructure with Terraform.
 
-![Pipeline Status](https://img.shields.io/github/actions/workflow/status/your-org/secure-python-app-pipeline/devsecops-pipeline.yml?branch=main&label=pipeline)
+![Pipeline Status](https://img.shields.io/github/actions/workflow/status/jm5579/secure-python-app-pipeline/devsecops-pipeline.yml?branch=main&label=pipeline)
 ![Security Scans](https://img.shields.io/badge/security%20scans-CodeQL%20%7C%20Snyk%20%7C%20Trivy%20%7C%20ZAP-blue)
-![License](https://img.shields.io/github/license/your-org/secure-python-app-pipeline)
+![License](https://img.shields.io/github/license/jm5579/secure-python-app-pipeline)
 
-> Replace `your-org/secure-python-app-pipeline` in the badge URLs above with your actual GitHub path once this repository is pushed - badges render live from the repo they live in.
+> Replace `jm5579/secure-python-app-pipeline` in the badge URLs above with your actual GitHub path once this repository is pushed - badges render live from the repo they live in.
 
 ---
 
@@ -86,7 +86,7 @@ A junior engineer following these steps should have the pipeline green end-to-en
 
 **1. Fork/clone the repository (2 min)**
 ```bash
-git clone https://github.com/your-org/secure-python-app-pipeline.git
+git clone https://github.com/jm5579/secure-python-app-pipeline.git
 cd secure-python-app-pipeline
 ```
 
@@ -94,7 +94,7 @@ cd secure-python-app-pipeline
 ```bash
 cd terraform/bootstrap
 terraform init
-terraform apply -var="state_bucket_name=your-org-secure-python-app-tfstate"
+terraform apply -var="state_bucket_name=jm5579-secure-python-app-tfstate"
 # note the two outputs: state_bucket_name and lock_table_name
 cd ../..
 ```
